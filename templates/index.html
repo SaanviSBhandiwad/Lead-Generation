@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PromptIQ Growth Finder</title>
+<link rel="icon" type="image/png" href="/static/promptiq-logo.png" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<style>
+  :root {
+    --ink: #17212b; --muted: #5e6b66; --paper: #f4f5f2; --surface: #ffffff; --line: #d9ddd6;
+    --metro: #5b2a86; --metro-soft: #efe8f6; --metro-ink: #3f1c60;
+    --good: #1e7b4f; --mid: #9a6212; --low: #b23a3a;
+    --warn-bg: #fff7e0; --warn-line: #ecd48a; --err-bg: #fdeeee; --err-line: #efb5b5;
+    --head-h: 56px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-size: 14px; line-height: 1.45;
+         font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+         font-variant-numeric: tabular-nums; display: flex; flex-direction: column; }
+  :focus-visible { outline: 3px solid #a98bc8; outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  a { color: var(--metro); } a:hover { color: var(--metro-ink); }
+  button { font: inherit; }
+
+  /* ---------- top bar ---------- */
+  .top { height: var(--head-h); flex: none; background: var(--surface); border-bottom: 1px solid var(--line);
+         display: flex; align-items: center; gap: 18px; padding: 0 20px; position: relative; z-index: 1200; }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .mark { width: 18px; height: 18px; border-radius: 50%; background: var(--metro);
+          box-shadow: 0 0 0 4px var(--metro-soft); flex: none; }
+  .brand strong { font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+  .brand span.sub { color: var(--muted); margin-left: 8px; font-size: 13px; }
+  .modes { display: flex; gap: 4px; margin-left: 12px; background: var(--paper); padding: 3px; border-radius: 9px; }
+  .modes button { border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 7px;
+                  font-weight: 600; cursor: pointer; }
+  .modes button:hover { color: var(--ink); }
+  .modes button[aria-pressed="true"] { background: var(--surface); color: var(--metro-ink);
+                  box-shadow: 0 0 0 1px var(--line); }
+  .spacer { flex: 1; }
+  .ghost { border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 14px;
+           border-radius: 8px; font-weight: 600; cursor: pointer; }
+  .ghost:hover { border-color: var(--metro); color: var(--metro-ink); }
+
+  .popover { position: absolute; right: 20px; top: calc(var(--head-h) + 8px); width: min(460px, calc(100vw - 24px));
+             background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
+             box-shadow: 0 10px 30px rgba(23,33,43,.16); }
+  .popover h2 { margin: 0 0 10px; font-size: 15px; }
+  .check { padding: 10px 0; border-top: 1px solid var(--line); }
+  .check:first-of-type { border-top: 0; }
+  .check .row { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+  .dot.ok { background: var(--good); } .dot.bad { background: var(--low); }
+  .tag { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .tag.ok { color: var(--good); } .tag.bad { color: var(--low); }
+  .check p { margin: 4px 0 0 17px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+
+  /* ---------- split layout ---------- */
+  .split { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(390px, 36vw, 520px) 1fr; }
+  .pane { overflow-y: auto; padding: 20px 22px 40px; background: var(--paper); border-right: 1px solid var(--line); }
+  .mappane { position: relative; min-height: 0; }
+  #map { position: absolute; inset: 0; background: #e6e9e4; }
+  @media (max-width: 980px) {
+    body { height: auto; display: block; }
+    .split { display: flex; flex-direction: column; }
+    .mappane { order: -1; height: 42vh; flex: none; position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--line); }
+    .results-head { scroll-margin-top: calc(42vh + 12px); }
+    .pane { overflow: visible; border-right: 0; }
+    .top { flex-wrap: wrap; height: auto; padding: 10px 14px; row-gap: 8px; }
+    .modes { margin-left: 0; order: 3; width: 100%; display: grid; grid-template-columns: repeat(4, 1fr); }
+    .modes button { padding: 6px 4px; font-size: 13px; }
+    .brand span.sub { display: none; }
+  }
+
+  /* ---------- form ---------- */
+  .lead { margin: 0 0 14px; color: var(--muted); }
+  .notice + .lead { margin-top: 14px; }
+  .form { display: grid; gap: 12px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  label { display: grid; gap: 5px; font-weight: 600; font-size: 13px; }
+  label small { font-weight: 400; color: var(--muted); font-size: 12px; }
+  input, select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+                  border-radius: 8px; padding: 9px 11px; width: 100%; }
+  input::placeholder { color: #8a9590; }
+  input:hover, select:hover { border-color: #b8beb6; }
+  .run { width: 100%; border: 0; border-radius: 9px; background: var(--metro); color: #fff; padding: 12px 16px;
+         font-weight: 650; font-size: 15px; cursor: pointer; }
+  .run:hover { background: var(--metro-ink); }
+  .run:disabled { background: #a994bd; cursor: default; }
+  .note { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+
+  /* ---------- notices ---------- */
+  .notice { border-radius: 10px; padding: 11px 14px; margin-top: 14px; font-size: 13.5px; }
+  .notice strong { display: block; margin-bottom: 2px; }
+  .notice p { margin: 0; overflow-wrap: anywhere; }
+  .notice p + p { margin-top: 6px; }
+  .notice.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  .notice.err { background: var(--err-bg); border: 1px solid var(--err-line); }
+
+  /* ---------- progress ---------- */
+  .progress { margin-top: 18px; }
+  .steps { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; padding: 0; }
+  .steps li { font-size: 12.5px; color: var(--muted); border-top: 3px solid var(--line); padding-top: 7px; font-weight: 600; }
+  .steps li.done { border-color: var(--metro); color: var(--ink); }
+  .steps li.active { border-color: var(--metro); color: var(--metro-ink); }
+  .steps li.active::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                             background: var(--metro); margin-right: 6px; animation: pulse 1.2s ease-in-out infinite; }
+  .steps li.fail { border-color: var(--low); color: var(--low); }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .status { margin: 10px 0 0; font-size: 13.5px; }
+  .status.error { color: var(--low); }
+  details.log { margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+  details.log summary { cursor: pointer; }
+  details.log ul { margin: 6px 0 0; padding-left: 18px; }
+
+  /* ---------- results ---------- */
+  .results-head { display: flex; align-items: baseline; gap: 10px; margin: 22px 0 6px; flex-wrap: wrap; }
+  .results-head h2 { margin: 0; font-size: 16px; }
+  .results-head .count { color: var(--muted); font-size: 13px; }
+  .results-head .tools { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .tools .ghost { padding: 5px 11px; font-size: 12.5px; }
+  .tools .msg { color: var(--good); font-size: 12.5px; font-weight: 600; }
+  .summary { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; }
+  ol.list { list-style: none; margin: 0; padding: 0; }
+  .res { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 14px 10px; margin: 0 -10px;
+         border-top: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .res:first-child { border-top: 0; }
+  .res:hover, .res.hl { background: var(--metro-soft); }
+  .rank { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+          font-weight: 700; font-size: 13px; }
+  .t-g { background: var(--good); } .t-m { background: var(--mid); } .t-l { background: var(--low); }
+  .res .top2 { display: flex; align-items: baseline; gap: 10px; }
+  .res h3 { margin: 0; font-size: 15px; font-weight: 650; flex: 1; min-width: 0; }
+  .score { font-size: 20px; font-weight: 700; line-height: 1; }
+  .score small { font-size: 11px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+  .s-g { color: var(--good); } .s-m { color: var(--mid); } .s-l { color: var(--low); }
+  .addr { margin: 3px 0 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  .why { margin: 8px 0 0; }
+  .links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 13px; font-weight: 600; }
+  .empty { padding: 28px 4px; color: var(--muted); }
+  .empty strong { color: var(--ink); display: block; margin-bottom: 4px; font-size: 15px; }
+  details.excluded { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
+  details.excluded summary { cursor: pointer; font-weight: 600; }
+  details.excluded li { margin: 8px 0; color: var(--muted); }
+
+  /* ---------- map pins ---------- */
+  .pin { background: none; border: 0; }
+  .pin span { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff;
+              font-weight: 700; font-size: 13px; border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.4);
+              transition: transform .12s ease; }
+  .pin.t-g span { background: var(--good); } .pin.t-m span { background: var(--mid); } .pin.t-l span { background: var(--low); }
+  .pin.hl span { transform: scale(1.3); outline: 3px solid rgba(91,42,134,.4); }
+  .leaflet-popup-content { font-family: inherit; font-size: 13px; line-height: 1.4; }
+  @media (prefers-reduced-motion: reduce) { .steps li.active::before { animation: none; } .pin span { transition: none; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/" style="text-decoration:none;color:inherit" aria-label="PromptIQ Growth Finder home"><img src="/static/promptiq-logo.png" alt="" width="26" height="27" style="display:block;flex:none">
+    <div><strong>PromptIQ</strong><span class="sub">Growth finder</span></div></a>
+  <div class="modes" role="group" aria-label="What to find">
+    <button data-mode="investors" aria-pressed="true">Investors</button>
+    <button data-mode="clients" aria-pressed="false">Clients</button>
+    <button data-mode="workspaces" aria-pressed="false">Workspaces</button>
+    <button data-mode="partners" aria-pressed="false">Partners</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="ghost" id="checkBtn" aria-expanded="false" aria-controls="setup">Check setup</button>
+  <section class="popover" id="setup" hidden aria-label="Setup check">
+    <h2>Setup check</h2>
+    <div id="checks"><p class="note">Checking...</p></div>
+    <button class="ghost" id="recheck" style="margin-top:10px">Check again</button>
+  </section>
+</header>
+
+<main class="split">
+  <section class="pane" id="pane">
+    <div id="banner" class="notice warn" hidden></div>
+    <p class="lead" id="lead">Set an area and press the button. Every address comes from Google Maps, so you can check it yourself.</p>
+
+    <div class="form">
+      <label>Area
+        <input id="area" type="text" value="Indiranagar, Bangalore" autocomplete="off" />
+        <small>Every result must be inside this area.</small>
+      </label>
+      <div class="two">
+        <label>Radius
+          <select id="radius">
+            <option value="1">1 km</option><option value="2">2 km</option>
+            <option value="3" selected>3 km</option><option value="5">5 km</option>
+            <option value="10">10 km</option><option value="25">25 km (whole city)</option>
+          </select>
+        </label>
+        <label>How many
+          <input id="count" type="number" min="1" max="15" value="5" />
+        </label>
+      </div>
+      <label>Keywords for the map <small>optional, comma separated, replaces the default searches</small>
+        <input id="keywords" type="text" placeholder="e.g. fintech, deep tech fund" autocomplete="off" />
+      </label>
+      <label>Rules every result must follow <small>optional, results that fail are excluded</small>
+        <input id="extra" type="text" placeholder="e.g. invests at seed stage" autocomplete="off" />
+      </label>
+      <button class="run" id="runBtn">Find investors</button>
+      <p class="note" id="modeNote"></p>
+    </div>
+
+    <div id="alert" class="notice err" role="alert" hidden></div>
+
+    <div class="progress" id="progress" hidden>
+      <ol class="steps" id="steps">
+        <li>Locate area</li><li>Find on Maps</li><li>Research</li><li>Rank</li>
+      </ol>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <details class="log"><summary>Activity log</summary><ul id="log"></ul></details>
+    </div>
+
+    <div id="warnings" class="notice warn" hidden></div>
+
+    <div class="results-head" id="resultsHead" hidden>
+      <h2 id="resultsTitle">Results</h2><span class="count" id="resultsCount"></span>
+      <div class="tools">
+        <span class="msg" id="toolMsg" role="status"></span>
+        <button class="ghost" id="csvBtn">Download CSV</button>
+        <button class="ghost" id="jsonBtn">Copy JSON</button>
+      </div>
+    </div>
+    <p class="summary" id="summary" hidden></p>
+    <ol class="list" id="list"></ol>
+    <div class="empty" id="empty">
+      <strong>Nothing yet</strong>
+      Pick what to find, set the area, and run it. Matching places appear here and on the map, numbered the same way.
+    </div>
+    <details class="excluded" id="excluded" hidden>
+      <summary>Why other places were excluded</summary>
+      <ul id="excludedList"></ul>
+    </details>
+  </section>
+
+  <section class="mappane" aria-label="Map"><div id="map"></div></section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const LABELS = { investors: "investors", clients: "clients", workspaces: "workspaces", partners: "partners" };
+const NOTES = { investors: "Only investors with a Google Maps listing can be address-verified, so individual angels are not included." };
+let mode = "investors", pollTimer = null, lastResult = null;
+const markers = {};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+[^\s<.,;)])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+const tier = s => s >= 85 ? "g" : s >= 70 ? "m" : "l";
+
+/* ---------- map ---------- */
+const map = L.map("map", { zoomControl: true }).setView([12.9716, 77.5946], 11);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+L.control.scale({ imperial: false }).addTo(map);
+const ringLayer = L.layerGroup().addTo(map), candLayer = L.layerGroup().addTo(map), resLayer = L.layerGroup().addTo(map);
+setTimeout(() => map.invalidateSize(), 0);
+window.addEventListener("resize", () => map.invalidateSize());
+
+function drawArea(center, km) {
+  ringLayer.clearLayers();
+  const c = L.circle(center, { radius: km * 1000, color: "#5b2a86", weight: 2, dashArray: "6 6", fillColor: "#5b2a86", fillOpacity: .05 });
+  ringLayer.addLayer(c);
+  map.fitBounds(c.getBounds(), { padding: [30, 30] });
+}
+function drawCandidates(list) {
+  candLayer.clearLayers();
+  list.forEach(p => L.circleMarker([p.latitude, p.longitude], { radius: 5, color: "#fff", weight: 1, fillColor: "#7d8a85", fillOpacity: .9 })
+    .bindPopup(`<strong>${esc(p.name)}</strong><br>${esc(p.address)}<br><em>Found on Maps, not yet researched</em>`).addTo(candLayer));
+}
+function setHl(pid, on) {
+  const m = markers[pid]; if (m && m.getElement()) m.getElement().classList.toggle("hl", on);
+  const li = document.querySelector(`.res[data-pid="${CSS.escape(pid)}"]`); if (li) li.classList.toggle("hl", on);
+}
+function drawResults(results) {
+  resLayer.clearLayers();
+  results.forEach((r, i) => {
+    const icon = L.divIcon({ className: `pin t-${tier(r.score)}`, html: `<span>${i + 1}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+    const m = L.marker([r.latitude, r.longitude], { icon, title: r.name }).addTo(resLayer)
+      .bindPopup(`<strong>${i + 1}. ${esc(r.name)}</strong><br>Score ${r.score}<br>${esc(r.address)}`);
+    m.on("mouseover", () => setHl(r.place_id, true)); m.on("mouseout", () => setHl(r.place_id, false));
+    m.on("click", () => document.querySelector(`.res[data-pid="${CSS.escape(r.place_id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    markers[r.place_id] = m;
+  });
+}
+
+/* ---------- mode + form memory ---------- */
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll(".modes button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
+  $("runBtn").textContent = "Find " + LABELS[m];
+  $("modeNote").textContent = NOTES[m] || "";
+}
+document.querySelectorAll(".modes button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+function saveForm() { try { localStorage.setItem("piq.form", JSON.stringify({ mode, area: $("area").value, radius: $("radius").value, count: $("count").value, keywords: $("keywords").value, extra: $("extra").value })); } catch (e) {} }
+function loadForm() {
+  try {
+    const f = JSON.parse(localStorage.getItem("piq.form") || "null"); if (!f) return;
+    if (f.area) $("area").value = f.area; if (f.radius) $("radius").value = f.radius; if (f.count) $("count").value = f.count;
+    $("keywords").value = f.keywords || ""; $("extra").value = f.extra || ""; if (LABELS[f.mode]) setMode(f.mode);
+  } catch (e) {}
+}
+setMode("investors"); loadForm();
+
+/* ---------- progress ---------- */
+function setSteps(active, failed) {
+  [...$("steps").children].forEach((li, i) => {
+    li.className = failed === i ? "fail" : i < active ? "done" : i === active ? "active" : "";
+  });
+}
+
+/* ---------- results ---------- */
+function clearAll() {
+  lastResult = null;
+  $("list").innerHTML = "";
+  ["resultsHead", "summary", "excluded", "warnings", "alert", "progress"].forEach(id => $(id).hidden = true);
+  $("empty").hidden = false;
+  resLayer.clearLayers(); candLayer.clearLayers(); ringLayer.clearLayers();
+  Object.keys(markers).forEach(k => delete markers[k]);
+}
+
+function renderResults(res) {
+  lastResult = res;
+  const list = $("list"); list.innerHTML = "";
+  res.results.forEach((r, i) => {
+    const li = document.createElement("li");
+    li.className = "res"; li.dataset.pid = r.place_id; li.tabIndex = 0;
+    const meta = [`${r.distance_km} km from the centre`];
+    if (r.phone) meta.push(esc(r.phone));
+    if (r.rating) meta.push(`Rated ${r.rating}${r.rating_count ? " (" + r.rating_count + ")" : ""}`);
+    li.innerHTML = `
+      <div class="rank t-${tier(r.score)}">${i + 1}</div>
+      <div>
+        <div class="top2"><h3>${esc(r.name)}</h3><span class="score s-${tier(r.score)}">${r.score}<small>/100</small></span></div>
+        <p class="addr">${esc(r.address)}</p>
+        <div class="meta">${meta.map(m => `<span>${m}</span>`).join("")}</div>
+        <p class="why">${esc(r.reasoning)}</p>
+        <div class="links">
+          ${r.maps_url ? `<a href="${esc(r.maps_url)}" target="_blank" rel="noopener">Check on Google Maps</a>` : ""}
+          ${/^https?:/.test(r.source || "") ? `<a href="${esc(r.source)}" target="_blank" rel="noopener">Source</a>` : ""}
+          ${r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+        </div>
+      </div>`;
+    const focus = () => { const m = markers[r.place_id]; if (m) { map.setView(m.getLatLng(), Math.max(map.getZoom(), 15)); m.openPopup(); } };
+    li.addEventListener("click", e => { if (e.target.closest("a")) return; focus(); });
+    li.addEventListener("keydown", e => { if (e.key === "Enter" && e.target === li) focus(); });
+    li.addEventListener("mouseenter", () => setHl(r.place_id, true)); li.addEventListener("mouseleave", () => setHl(r.place_id, false));
+    list.appendChild(li);
+  });
+  const has = res.results.length > 0;
+  $("empty").hidden = has;
+  if (!has) $("empty").innerHTML = "<strong>Nothing qualified</strong>The notice above says what to change: widen the radius, change the keywords, or relax your rules.";
+  $("resultsHead").hidden = !has;
+  $("resultsTitle").textContent = "Results: " + LABELS[mode];
+  $("resultsCount").textContent = `${res.returned} of ${res.requested} requested`;
+  $("summary").hidden = false;
+  $("summary").textContent = `${res.pool_size} open places with a verified address were found in range and ${res.researched} were researched. Took ${res.elapsed_seconds}s${res.mock ? " (sample data)" : ""}. ${res.note || ""}`;
+  drawResults(res.results);
+  if (res.warnings && res.warnings.length) { $("warnings").hidden = false; $("warnings").innerHTML = res.warnings.map(w => `<p>${esc(w)}</p>`).join(""); }
+  if (res.rejected && res.rejected.length) {
+    $("excluded").hidden = false;
+    $("excludedList").innerHTML = res.rejected.map(r => `<li><strong>${esc(r.name)}</strong><br>${esc(r.address)}<br>${esc(r.reason)}</li>`).join("");
+  }
+}
+
+function showAlert(title, msg, detail) {
+  $("alert").hidden = false;
+  $("alert").innerHTML = `<strong>${esc(title)}</strong><p>${linkify(msg)}</p>${detail ? `<p style="color:var(--muted)">${esc(String(detail).slice(-300))}</p>` : ""}`;
+}
+
+/* ---------- running ---------- */
+async function run() {
+  clearInterval(pollTimer); clearAll(); saveForm();
+  $("empty").hidden = true;
+  $("runBtn").disabled = true;
+  $("progress").hidden = false; setSteps(0); $("status").className = "status"; $("status").textContent = "Starting...";
+  $("log").innerHTML = "";
+  let resp;
+  try {
+    resp = await (await fetch("/api/start", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, area: $("area").value, radius_km: $("radius").value, count: $("count").value,
+        keywords: $("keywords").value, extra: $("extra").value }) })).json();
+  } catch (e) {
+    $("progress").hidden = true; $("runBtn").disabled = false;
+    showAlert("Can't reach the app", "Check that python3 app.py is still running in your Ubuntu terminal, then try again."); return;
+  }
+  if (!resp.ok) { $("progress").hidden = true; $("runBtn").disabled = false; showAlert("Can't start", resp.error); return; }
+  poll(resp.job_id);
+}
+
+function poll(id) {
+  let drewRing = false, drewCands = 0, misses = 0, step = 0;
+  pollTimer = setInterval(async () => {
+    let j;
+    try { j = await (await fetch("/api/job/" + id)).json(); misses = 0; }
+    catch (e) { if (++misses >= 4) { clearInterval(pollTimer); $("runBtn").disabled = false; setSteps(step, step); showAlert("Lost contact with the app", "Check that python3 app.py is still running in your Ubuntu terminal."); } return; }
+    if (!j.ok) { clearInterval(pollTimer); $("runBtn").disabled = false; showAlert("Run not found", j.error); return; }
+    step = !j.center ? 0 : j.candidates.length === 0 ? 1 : 2;
+    $("log").innerHTML = j.log.map(l => `<li>${esc(l)}</li>`).join("");
+    if (j.center && !drewRing) { drawArea(j.center, j.radius_km); drewRing = true; }
+    if (j.candidates.length !== drewCands) { drawCandidates(j.candidates); drewCands = j.candidates.length; }
+    if (j.status === "running") { setSteps(step); $("status").textContent = `${j.message} (${Math.round(j.elapsed_seconds)}s)`; }
+    else if (j.status === "done") {
+      clearInterval(pollTimer); $("runBtn").disabled = false; candLayer.clearLayers();
+      setSteps(4); $("status").textContent = j.message; renderResults(j.result);
+      const target = j.result.results.length ? $("resultsHead") : $("warnings");
+      const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      setTimeout(() => target.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" }), 50);
+    } else {
+      clearInterval(pollTimer); $("runBtn").disabled = false; setSteps(step, step);
+      $("status").className = "status error"; $("status").textContent = "Stopped at: " + $("steps").children[step].textContent;
+      showAlert("The run could not finish", j.error, j.detail);
+    }
+  }, 1500);
+}
+
+/* ---------- export ---------- */
+function flash(msg) { $("toolMsg").textContent = msg; setTimeout(() => { $("toolMsg").textContent = ""; }, 2200); }
+function exportRows() {
+  return (lastResult?.results || []).map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, address: r.address,
+    distance_km: r.distance_km, latitude: r.latitude, longitude: r.longitude, phone: r.phone || "", website: r.website || "",
+    maps_url: r.maps_url || "", source: r.source || "", reasoning: r.reasoning || "" }));
+}
+$("csvBtn").addEventListener("click", () => {
+  const rows = exportRows(); if (!rows.length) return;
+  const cols = Object.keys(rows[0]), q = v => `"${String(v).replace(/"/g, '""')}"`;
+  const csv = "\ufeff" + [cols.join(","), ...rows.map(r => cols.map(c => q(r[c])).join(","))].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = `promptiq-${mode}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); flash("CSV saved");
+});
+$("jsonBtn").addEventListener("click", async () => {
+  const text = JSON.stringify(exportRows(), null, 2);
+  try { await navigator.clipboard.writeText(text); flash("Copied"); }
+  catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); flash("Copied"); }
+});
+
+/* ---------- setup check ---------- */
+async function runCheck() {
+  $("checks").innerHTML = '<p class="note">Checking...</p>';
+  try {
+    const r = await (await fetch("/api/check")).json();
+    $("checks").innerHTML = r.checks.map(c => `
+      <div class="check"><div class="row"><span class="dot ${c.ok ? "ok" : "bad"}"></span>${esc(c.name)}
+        <span class="tag ${c.ok ? "ok" : "bad"}">${c.ok ? "Working" : "Needs a fix"}</span></div>
+        <p>${linkify(c.detail)}</p></div>`).join("");
+    $("banner").hidden = true;
+    if (r.checks.some(c => c.name === "Sample-data mode")) { $("banner").hidden = false; $("banner").innerHTML = "<strong>Sample-data mode</strong><p>Results are fake and nothing is sent to Google or Hermes.</p>"; }
+    return r;
+  } catch (e) { $("checks").innerHTML = '<p class="note">Cannot reach the app. Is python3 app.py running?</p>'; }
+}
+function togglePop(open) {
+  const show = open ?? $("setup").hidden;
+  $("setup").hidden = !show; $("checkBtn").setAttribute("aria-expanded", String(show));
+  if (show) runCheck();
+}
+$("checkBtn").addEventListener("click", () => togglePop());
+$("recheck").addEventListener("click", runCheck);
+document.addEventListener("keydown", e => { if (e.key === "Escape") togglePop(false); });
+document.addEventListener("click", e => { if (!$("setup").hidden && !e.target.closest("#setup") && !e.target.closest("#checkBtn")) togglePop(false); });
+
+$("runBtn").addEventListener("click", run);
+["area", "count", "keywords", "extra"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter" && !$("runBtn").disabled) run(); }));
+runCheck().then(r => { if (r && !r.ok) { $("setup").hidden = false; $("checkBtn").setAttribute("aria-expanded", "true"); } });
+</script>
+<script src="/static/enrich.js"></script>
+</body>
+</html>

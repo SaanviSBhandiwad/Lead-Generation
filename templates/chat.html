@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PromptIQ Growth Finder: chat</title>
+<link rel="icon" type="image/png" href="/static/promptiq-logo.png" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<style>
+  :root {
+    --ink: #17212b; --muted: #5e6b66; --paper: #f4f5f2; --surface: #ffffff; --line: #d9ddd6;
+    --metro: #5b2a86; --metro-soft: #efe8f6; --metro-ink: #3f1c60;
+    --good: #1e7b4f; --mid: #9a6212; --low: #b23a3a; --warn-bg: #fff7e0; --warn-line: #ecd48a;
+    --err-bg: #fdeeee; --err-line: #efb5b5;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; display: flex; flex-direction: column; background: var(--paper); color: var(--ink);
+         font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+         font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 3px solid #a98bc8; outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  a { color: var(--metro); }
+  button { font: inherit; }
+  .ghost { border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 6px 12px;
+           border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; }
+  .ghost:hover { border-color: var(--metro); color: var(--metro-ink); }
+  .ghost:disabled { opacity: .55; cursor: default; }
+
+  /* header */
+  .top { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: var(--surface);
+         border-bottom: 1px solid var(--line); }
+  .top img { width: 28px; height: 29px; display: block; }
+  .top strong { font-size: 16px; font-weight: 650; }
+  .top .sub { color: var(--muted); margin-left: 6px; }
+  .top .spacer { flex: 1; }
+  .top a.link { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 13px; padding: 6px 10px; }
+  .top a.link:hover { color: var(--metro); }
+
+  /* transcript */
+  main { flex: 1; min-height: 0; overflow-y: auto; }
+  .log { max-width: 820px; margin: 0 auto; padding: 22px 18px 30px; }
+  @media (min-width: 1100px) { .log { padding-right: 380px; max-width: 1200px; } }
+  .msg { display: flex; gap: 10px; margin: 0 0 18px; }
+  .msg.user { justify-content: flex-end; }
+  .msg.user .bubble { background: var(--metro); color: #fff; border-radius: 14px 14px 4px 14px; padding: 9px 14px;
+                      max-width: 78%; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.bot .avatar { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--surface);
+                     border: 1px solid var(--line); display: grid; place-items: center; }
+  .msg.bot .avatar img { width: 18px; height: 19px; }
+  .msg.bot .body { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--line);
+                   border-radius: 4px 14px 14px 14px; padding: 12px 14px; }
+  .body p { margin: 0 0 8px; } .body p:last-child { margin-bottom: 0; }
+  .body .muted { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip { border: 1px solid var(--line); background: var(--paper); border-radius: 16px; padding: 6px 12px;
+          cursor: pointer; font-size: 13px; text-align: left; color: var(--ink); }
+  .chip:hover { border-color: var(--metro); background: var(--metro-soft); }
+  .notice { border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 13px; overflow-wrap: anywhere; }
+  .notice.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  .notice.err { background: var(--err-bg); border: 1px solid var(--err-line); }
+
+  /* progress */
+  .steps { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; padding: 0; }
+  .steps li { font-size: 12px; color: var(--muted); border-top: 3px solid var(--line); padding-top: 6px; font-weight: 600; }
+  .steps li.done, .steps li.active { border-color: var(--metro); color: var(--ink); }
+  .steps li.active::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                             background: var(--metro); margin-right: 6px; animation: pulse 1.2s infinite; }
+  .steps li.fail { border-color: var(--low); color: var(--low); }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  /* results */
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 4px; }
+  .actions .status { color: var(--muted); font-size: 12.5px; }
+  .actions .status.err { color: var(--low); }
+  .lead { display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 12px 8px; margin: 0 -8px;
+          border-top: 1px solid var(--line); border-radius: 8px; }
+  .lead.hl { background: var(--metro-soft); }
+  .rank { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+          font-weight: 700; font-size: 12.5px; }
+  .t-g { background: var(--good); } .t-m { background: var(--mid); } .t-l { background: var(--low); }
+  .lead .head { display: flex; align-items: baseline; gap: 10px; }
+  .lead h3 { margin: 0; font-size: 15px; font-weight: 650; flex: 1; min-width: 0; cursor: pointer; }
+  .score { font-weight: 700; font-size: 17px; } .score small { font-size: 11px; color: var(--muted); }
+  .s-g { color: var(--good); } .s-m { color: var(--mid); } .s-l { color: var(--low); }
+  .meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .tier { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-size: 11.5px; font-weight: 700; margin-right: 6px; }
+  .icp, .why { margin-top: 6px; font-size: 13px; }
+  .icp .uc { color: var(--muted); margin-top: 2px; }
+  .links { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 13px; font-weight: 600; }
+  .contact { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--paper); border: 1px solid var(--line); font-size: 13px; }
+  .contact .who { font-weight: 600; } .contact .who span { font-weight: 400; color: var(--muted); }
+  .contact .mail { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 3px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-size: 11.5px; font-weight: 600; }
+  .contact .note, .contact .cost { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .contact .sent { color: var(--good); font-weight: 600; font-size: 12.5px; margin-top: 3px; }
+  .contact .ghost { margin-top: 6px; }
+
+  /* composer */
+  .composer { flex: none; border-top: 1px solid var(--line); background: var(--surface); }
+  .composer form { max-width: 820px; margin: 0 auto; padding: 12px 18px 14px; display: flex; gap: 10px; align-items: flex-end; }
+  @media (min-width: 1100px) { .composer form { padding-right: 380px; max-width: 1200px; } }
+  .composer textarea { flex: 1; resize: none; font: inherit; color: var(--ink); border: 1px solid var(--line);
+                       border-radius: 12px; padding: 10px 12px; min-height: 44px; max-height: 160px; background: var(--paper); }
+  .composer textarea:focus { background: #fff; }
+  .send { flex: none; border: 0; border-radius: 12px; background: var(--metro); color: #fff; font-weight: 650;
+          padding: 0 18px; height: 44px; cursor: pointer; }
+  .send:disabled { background: #a994bd; cursor: default; }
+
+  /* corner map */
+  .mapbox { position: fixed; right: 16px; bottom: 88px; width: 340px; height: 250px; background: var(--surface);
+            border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 24px rgba(23,33,43,.14);
+            overflow: hidden; z-index: 500; display: flex; flex-direction: column; }
+  .mapbox.big { width: min(640px, calc(100vw - 32px)); height: min(460px, calc(100vh - 170px)); }
+  .mapbox .bar { flex: none; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: 12.5px; font-weight: 600; }
+  .mapbox .bar span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mapbox .bar button { border: 0; background: none; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 12.5px; padding: 2px 6px; }
+  .mapbox .bar button:hover { color: var(--metro); }
+  #map { flex: 1; }
+  .maptoggle { position: fixed; right: 16px; bottom: 88px; z-index: 500; }
+  @media (max-width: 1099px) { .mapbox { bottom: 84px; } .mapbox:not(.big) { width: min(340px, calc(100vw - 32px)); } }
+  .pin { background: none; border: 0; }
+  .pin span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #fff; font-weight: 700;
+              font-size: 11.5px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); transition: transform .12s; }
+  .pin.t-g span { background: var(--good); } .pin.t-m span { background: var(--mid); } .pin.t-l span { background: var(--low); }
+  .pin.hl span { transform: scale(1.35); outline: 3px solid rgba(91,42,134,.4); }
+
+  /* email writer */
+  .overlay { position: fixed; inset: 0; background: rgba(23,33,43,.45); z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .dialog { background: var(--surface); border-radius: 12px; width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 18px 20px; }
+  .dialog h2 { margin: 0 0 12px; font-size: 17px; }
+  .dialog label { display: grid; gap: 4px; font-weight: 600; font-size: 13px; margin-bottom: 10px; }
+  .dialog input[type=text], .dialog textarea { font: inherit; font-weight: 400; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  .dialog textarea { min-height: 250px; resize: vertical; }
+  .dialog .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+  .dialog .check input { margin-top: 3px; }
+  .dialog .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+  .dialog .note { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+  .dialog .msgline { font-size: 13px; min-height: 18px; margin-top: 6px; }
+  .dialog .msgline.err { color: var(--low); } .dialog .msgline.ok { color: var(--good); }
+  @media (prefers-reduced-motion: reduce) { .steps li.active::before { animation: none; } .pin span { transition: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <img src="/static/promptiq-logo.png" alt="PromptIQ logo" />
+  <div><strong>PromptIQ</strong><span class="sub">Growth Finder</span></div>
+  <div class="spacer"></div>
+  <a class="link" href="/app">Classic view</a>
+  <button class="ghost" id="setupBtn">Check setup</button>
+</header>
+
+<main id="scroller"><div class="log" id="log" role="log" aria-live="polite"></div></main>
+
+<div class="composer">
+  <form id="composer">
+    <textarea id="input" rows="1" placeholder='Ask for leads, e.g. "5 Tier A NBFC clients near Andheri, Mumbai within 5 km"' aria-label="Message"></textarea>
+    <button class="send" id="sendBtn" type="submit">Send</button>
+  </form>
+</div>
+
+<section class="mapbox" id="mapbox" aria-label="Map of results">
+  <div class="bar"><span id="mapTitle">Map</span>
+    <button id="mapSize" type="button">Enlarge</button><button id="mapHide" type="button">Hide</button></div>
+  <div id="map"></div>
+</section>
+<button class="ghost maptoggle" id="mapShow" hidden>Show map</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+[^\s<.,;)])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+const tierOf = s => s >= 85 ? "g" : s >= 70 ? "m" : "l";
+const TIERCOL = { A: "#1e7b4f", B: "#2e5c8a", C: "#5e6b66" };
+const VERDICT = { valid: ["Email verified", "#1e7b4f"], risky: ["Email risky", "#9a6212"],
+                  invalid: ["Email invalid", "#b23a3a"], unknown: ["Not verified", "#5e6b66"] };
+const runs = [];            // every finished search: {id, search, result, contacts}
+let busy = false, pending = null, activeRun = null;
+
+/* ---------------- map in the corner ---------------- */
+const map = L.map("map", { zoomControl: true, attributionControl: true }).setView([12.9716, 77.5946], 10);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(map);
+const ringL = L.layerGroup().addTo(map), candL = L.layerGroup().addTo(map), pinL = L.layerGroup().addTo(map);
+let pins = {};
+const narrow = () => window.matchMedia("(max-width: 1099px)").matches;
+function setMap(visible) { $("mapbox").hidden = !visible; $("mapShow").hidden = visible; if (visible) setTimeout(() => map.invalidateSize(), 50); }
+$("mapHide").onclick = () => setMap(false);
+$("mapShow").onclick = () => setMap(true);
+$("mapSize").onclick = () => { const b = $("mapbox").classList.toggle("big"); $("mapSize").textContent = b ? "Shrink" : "Enlarge"; setTimeout(() => map.invalidateSize(), 60); };
+if (narrow()) setMap(false);
+function drawRing(center, km) {
+  ringL.clearLayers();
+  const c = L.circle(center, { radius: km * 1000, color: "#5b2a86", weight: 2, dashArray: "5 5", fillOpacity: .05 }).addTo(ringL);
+  map.fitBounds(c.getBounds(), { padding: [12, 12] });
+}
+function drawCands(list) {
+  candL.clearLayers();
+  list.forEach(p => L.circleMarker([p.latitude, p.longitude], { radius: 4, color: "#fff", weight: 1, fillColor: "#7d8a85", fillOpacity: .9 }).addTo(candL));
+}
+function drawRun(run) {
+  activeRun = run; candL.clearLayers(); pinL.clearLayers(); pins = {};
+  const res = run.result.results;
+  $("mapTitle").textContent = `${res.length} ${run.search.mode} near ${run.search.area}`;
+  if (run.center) drawRing(run.center, run.search.radius_km);
+  res.forEach((r, i) => {
+    const icon = L.divIcon({ className: `pin t-${tierOf(r.score)}`, html: `<span>${i + 1}</span>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+    const m = L.marker([r.latitude, r.longitude], { icon, title: r.name }).addTo(pinL)
+      .bindPopup(`<strong>${i + 1}. ${esc(r.name)}</strong><br>Score ${r.score}<br>${esc(r.address)}`);
+    m.on("mouseover", () => hl(run.id, r.place_id, true)); m.on("mouseout", () => hl(run.id, r.place_id, false));
+    m.on("click", () => document.querySelector(`[data-run="${run.id}"] .lead[data-pid="${CSS.escape(r.place_id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    pins[r.place_id] = m;
+  });
+  if (!run.center && res.length) map.fitBounds(L.latLngBounds(res.map(r => [r.latitude, r.longitude])), { padding: [20, 20] });
+}
+function hl(runId, pid, on) {
+  if (activeRun && activeRun.id === runId) { const m = pins[pid]; if (m && m.getElement()) m.getElement().classList.toggle("hl", on); }
+  document.querySelector(`[data-run="${runId}"] .lead[data-pid="${CSS.escape(pid)}"]`)?.classList.toggle("hl", on);
+}
+
+/* ---------------- transcript ---------------- */
+function scrollDown() { const s = $("scroller"); s.scrollTop = s.scrollHeight; }
+function userMsg(text) {
+  const d = document.createElement("div"); d.className = "msg user";
+  d.innerHTML = `<div class="bubble">${esc(text)}</div>`; $("log").appendChild(d); scrollDown();
+}
+function botMsg(html) {
+  const d = document.createElement("div"); d.className = "msg bot";
+  d.innerHTML = `<div class="avatar"><img src="/static/promptiq-logo.png" alt=""></div><div class="body">${html}</div>`;
+  $("log").appendChild(d); scrollDown(); return d.querySelector(".body");
+}
+function welcome() {
+  const b = botMsg(`<p>Tell me what leads you want, in plain words. I find real places on Google Maps, research and score them against PromptIQ's ICP, and can find and verify emails with Treg.</p>
+    <p class="muted">Try one of these:</p><div class="chips"></div>`);
+  ["5 Tier A NBFC clients near Andheri, Mumbai within 5 km", "3 seed-stage investors in Indiranagar, Bangalore",
+   "Hospitals and diagnostic centres in Pune that use SAP", "Coworking spaces near HSR Layout for a team of 6",
+   "NVIDIA Jetson integrators in Bengaluru"].forEach(t => {
+    const c = document.createElement("button"); c.className = "chip"; c.textContent = t; c.type = "button";
+    c.onclick = () => { if (!busy) handle(t); }; b.querySelector(".chips").appendChild(c);
+  });
+  botMsg(`<p class="muted">After a search you can say <strong>find emails</strong>, <strong>email 2</strong> to write to lead #2, or <strong>export</strong> for a CSV.</p>`);
+}
+
+/* ---------------- input ---------------- */
+const input = $("input");
+input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 160) + "px"; });
+input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("composer").requestSubmit(); } });
+$("composer").addEventListener("submit", e => {
+  e.preventDefault(); const t = input.value.trim(); if (!t || busy) return;
+  input.value = ""; input.style.height = "auto"; handle(t);
+});
+function setBusy(b) { busy = b; $("sendBtn").disabled = b; input.placeholder = b ? "Working on it..." : 'Ask for leads, e.g. "5 Tier A NBFC clients near Andheri, Mumbai within 5 km"'; }
+$("setupBtn").onclick = () => { if (!busy) handle("check setup"); };
+
+async function handle(text) {
+  userMsg(text);
+  const t = text.toLowerCase().trim();
+  const last = runs[runs.length - 1];
+  let m;
+  if (/^(help|\?)$/.test(t)) { welcome(); return; }
+  if (/^(check )?setup$/.test(t)) { return checkSetup(); }
+  if (/^(find|get)?\s*(e-?mails?|contacts?)$|^(enrich|verify)\b/.test(t)) {
+    if (!last) return botMsg("<p>Run a search first, then I can find emails for those leads.</p>");
+    return enrich(last);
+  }
+  if ((m = t.match(/^(?:write\s+(?:an?\s+)?)?e-?mail(?:\s+to)?\s+(?:lead\s+)?#?(\d+)$/))) {
+    if (!last) return botMsg("<p>Run a search first.</p>");
+    const r = last.result.results[Number(m[1]) - 1];
+    if (!r) return botMsg(`<p>There is no lead #${esc(m[1])} in the last results.</p>`);
+    const c = last.contacts[r.place_id];
+    if (!c || !c.contact_email) return botMsg(`<p>I don't have an email for #${esc(m[1])} (${esc(r.name)}) yet. Say <strong>find emails</strong> first.</p>`);
+    return openMail(last, r.place_id);
+  }
+  if (/^(export|csv|download)( csv)?$/.test(t)) {
+    if (!last) return botMsg("<p>Run a search first.</p>");
+    downloadCsv(last); return botMsg("<p>Downloaded the CSV of the last results.</p>");
+  }
+  return startSearch(text);
+}
+
+/* ---------------- search ---------------- */
+async function startSearch(text) {
+  setBusy(true);
+  const body = botMsg(`<p class="muted">Reading your request...</p>`);
+  let p;
+  try {
+    p = await (await fetch("/api/parse", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, pending }) })).json();
+  } catch (e) { body.innerHTML = `<div class="notice err">Cannot reach the app. Check that python3 app.py is running.</div>`; setBusy(false); return; }
+  if (!p.ok) { body.innerHTML = `<div class="notice err">${esc(p.error || "Could not read that request.")}</div>`; setBusy(false); return; }
+  if (p.missing === "area") {
+    pending = p.search;
+    body.innerHTML = `<p>Which area should I search? For example <em>Andheri, Mumbai</em> or <em>Indiranagar, Bangalore</em>.</p>`;
+    setBusy(false); input.focus(); return;
+  }
+  pending = null;
+  const s = p.search;
+  body.innerHTML = `<p>${esc(p.reply)}</p><ol class="steps"><li>Locate area</li><li>Find on Maps</li><li>Research</li><li>Rank</li></ol>
+    <p class="muted" data-status>Starting...</p>`;
+  let job;
+  try {
+    job = await (await fetch("/api/start", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: s.mode, area: s.area, radius_km: s.radius_km, count: s.count,
+        keywords: s.keywords.join(", "), extra: s.rules }) })).json();
+  } catch (e) { job = { ok: false, error: "Cannot reach the app." }; }
+  if (!job.ok) { body.insertAdjacentHTML("beforeend", `<div class="notice err">${linkify(job.error)}</div>`); setBusy(false); return; }
+  poll(job.job_id, s, body);
+}
+
+function setSteps(body, active, failed) {
+  [...body.querySelectorAll(".steps li")].forEach((li, i) => { li.className = failed === i ? "fail" : i < active ? "done" : i === active ? "active" : ""; });
+}
+
+function poll(jobId, search, body) {
+  let ring = false, cands = 0, misses = 0, step = 0;
+  if (narrow() && $("mapbox").hidden) {} else setMap(true);
+  const timer = setInterval(async () => {
+    let j;
+    try { j = await (await fetch("/api/job/" + jobId)).json(); misses = 0; }
+    catch (e) { if (++misses >= 4) { clearInterval(timer); body.insertAdjacentHTML("beforeend", `<div class="notice err">Lost contact with the app.</div>`); setBusy(false); } return; }
+    if (!j.ok) { clearInterval(timer); body.insertAdjacentHTML("beforeend", `<div class="notice err">${esc(j.error)}</div>`); setBusy(false); return; }
+    step = !j.center ? 0 : j.candidates.length === 0 ? 1 : 2;
+    const st = body.querySelector("[data-status]");
+    if (j.center && !ring) { pinL.clearLayers(); candL.clearLayers(); drawRing(j.center, j.radius_km); ring = true; $("mapTitle").textContent = `Searching near ${search.area}`; }
+    if (j.candidates.length !== cands) { drawCands(j.candidates); cands = j.candidates.length; }
+    if (j.status === "running") { setSteps(body, step); if (st) st.textContent = `${j.message} (${Math.round(j.elapsed_seconds)}s)`; return; }
+    clearInterval(timer); setBusy(false);
+    if (j.status === "error") {
+      setSteps(body, step, step); if (st) st.remove();
+      body.insertAdjacentHTML("beforeend", `<div class="notice err">${linkify(j.error)}</div>`); scrollDown(); return;
+    }
+    setSteps(body, 4); if (st) st.remove();
+    const run = { id: "r" + (runs.length + 1), search, result: j.result, center: j.center, contacts: {} };
+    runs.push(run);
+    renderRun(body, run); drawRun(run); scrollDown();
+  }, 1500);
+}
+
+/* ---------------- results ---------------- */
+function leadHtml(run, r, i) {
+  const c = run.contacts[r.place_id];
+  const meta = [`${r.distance_km} km away`];
+  if (r.phone) meta.push(esc(r.phone));
+  if (r.rating) meta.push(`Rated ${r.rating}`);
+  let icp = "";
+  if (r.tier || r.hook) icp = `<div class="icp">${r.tier ? `<span class="tier" style="background:${TIERCOL[r.tier] || TIERCOL.C}">Tier ${esc(r.tier)}</span>` : ""}${esc(r.hook || "")}
+    ${r.use_case ? `<div class="uc">Pilot idea: ${esc(r.use_case)}</div>` : ""}</div>`;
+  return `<div class="rank t-${tierOf(r.score)}">${i + 1}</div><div>
+    <div class="head"><h3>${esc(r.name)}</h3><span class="score s-${tierOf(r.score)}">${r.score}<small>/100</small></span></div>
+    <div class="meta">${esc(r.address)}</div><div class="meta">${meta.map(x => `<span>${x}</span>`).join("")}</div>
+    ${icp}<div class="why">${esc(r.reasoning)}</div>
+    <div class="links">${r.maps_url ? `<a href="${esc(r.maps_url)}" target="_blank" rel="noopener">Check on Google Maps</a>` : ""}
+      ${/^https?:/.test(r.source || "") ? `<a href="${esc(r.source)}" target="_blank" rel="noopener">Source</a>` : ""}
+      ${r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Website</a>` : ""}</div>
+    ${c ? contactHtml(c) : ""}</div>`;
+}
+function contactHtml(c) {
+  let h = `<div class="contact">`;
+  if (c.status === "found" || c.status === "person_only") {
+    const [label, color] = VERDICT[c.email_verdict] || VERDICT.unknown;
+    h += `<div class="who">${esc(c.contact_name)}${c.contact_title ? ` <span>${esc(c.contact_title)}</span>` : ""}</div>`;
+    if (c.contact_email) h += `<div class="mail"><a href="mailto:${esc(c.contact_email)}">${esc(c.contact_email)}</a><span class="badge" style="background:${color}">${label}</span>
+      ${c.contact_linkedin ? `<a href="${esc(c.contact_linkedin)}" target="_blank" rel="noopener">LinkedIn</a>` : ""}</div>`;
+    if (c.note) h += `<div class="note">${esc(c.note)}</div>`;
+  } else h += `<div class="note">${esc(c.note || "No contact found.")}</div>`;
+  if (c.cost_usd) h += `<div class="cost">Lookup cost $${Number(c.cost_usd).toFixed(3)}</div>`;
+  if (c.sent) h += `<div class="sent">${esc(c.sent)}</div>`;
+  else if (c.contact_email && c.email_verdict !== "invalid") h += `<button class="ghost" data-write="1">Write email</button>`;
+  return h + `</div>`;
+}
+function renderRun(body, run) {
+  const res = run.result;
+  body.dataset.run = run.id;
+  let h = "";
+  if (res.warnings && res.warnings.length) h += res.warnings.map(w => `<div class="notice warn">${esc(w)}</div>`).join("");
+  h += `<p class="muted">${res.returned} of ${res.requested} found. ${res.pool_size} verified places on Google Maps in range, ${res.researched} researched, ${res.elapsed_seconds}s${res.mock ? " (sample data)" : ""}. ${esc(res.note || "")}</p>`;
+  h += `<div class="actions"><button class="ghost" data-act="enrich">Find emails (Treg)</button><button class="ghost" data-act="csv">Download CSV</button>
+        <button class="ghost" data-act="json">Copy JSON</button><button class="ghost" data-act="map">Show on map</button><span class="status" data-enrich></span></div>`;
+  h += `<div class="leads"></div>`;
+  body.insertAdjacentHTML("beforeend", h);
+  body.querySelector('[data-act="enrich"]').onclick = () => enrich(run);
+  body.querySelector('[data-act="csv"]').onclick = () => downloadCsv(run);
+  body.querySelector('[data-act="json"]').onclick = async (e) => { await copyJson(run); e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy JSON", 1500); };
+  body.querySelector('[data-act="map"]').onclick = () => { setMap(true); drawRun(run); };
+  if (!res.results.length) body.querySelector(".actions").hidden = true;
+  renderLeads(run);
+}
+function renderLeads(run) {
+  const wrap = document.querySelector(`[data-run="${run.id}"] .leads`); if (!wrap) return;
+  wrap.innerHTML = "";
+  run.result.results.forEach((r, i) => {
+    const el = document.createElement("div"); el.className = "lead"; el.dataset.pid = r.place_id;
+    el.innerHTML = leadHtml(run, r, i);
+    el.addEventListener("mouseenter", () => hl(run.id, r.place_id, true));
+    el.addEventListener("mouseleave", () => hl(run.id, r.place_id, false));
+    el.querySelector("h3").onclick = () => { setMap(true); if (activeRun !== run) drawRun(run); const m = pins[r.place_id]; if (m) { map.setView(m.getLatLng(), 15); m.openPopup(); } };
+    const w = el.querySelector("[data-write]"); if (w) w.onclick = () => openMail(run, r.place_id);
+    wrap.appendChild(el);
+  });
+}
+
+/* ---------------- enrich (Treg) ---------------- */
+async function enrich(run) {
+  const st = document.querySelector(`[data-run="${run.id}"] [data-enrich]`);
+  const btn = document.querySelector(`[data-run="${run.id}"] [data-act="enrich"]`);
+  const say = (t, err) => { if (st) { st.textContent = t; st.className = "status" + (err ? " err" : ""); } };
+  if (btn) btn.disabled = true; say("Finding contacts...");
+  let resp;
+  try {
+    resp = await (await fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: run.search.mode, leads: run.result.results.map(r => ({ place_id: r.place_id, name: r.name, website: r.website || "" })) }) })).json();
+  } catch (e) { resp = { ok: false, error: "Cannot reach the app." }; }
+  if (!resp.ok) { say(resp.error, true); if (btn) btn.disabled = false; botMsg(`<div class="notice err">${linkify(resp.error)}</div>`); return; }
+  const timer = setInterval(async () => {
+    let j; try { j = await (await fetch("/api/enrich/" + resp.job_id)).json(); } catch (e) { return; }
+    if (!j.ok) { clearInterval(timer); say(j.error, true); if (btn) btn.disabled = false; return; }
+    for (const [k, v] of Object.entries(j.results || {})) run.contacts[k] = Object.assign(run.contacts[k] || {}, v);
+    renderLeads(run);
+    const spent = `Spent $${Number(j.spent || 0).toFixed(3)} of $${Number(j.budget).toFixed(2)}.`;
+    if (j.status === "running") { say(`${j.message}. ${spent}`); return; }
+    clearInterval(timer); if (btn) btn.disabled = false;
+    if (j.status === "error") { say(j.error, true); botMsg(`<div class="notice err">${linkify(j.error)}</div>`); return; }
+    const found = Object.values(run.contacts).filter(c => c.contact_email).length;
+    say(`${j.message}. ${spent}`, !!j.stopped);
+    botMsg(`<p>Found ${found} email${found === 1 ? "" : "s"}. ${esc(spent)}${j.stopped ? " Stopped early: " + esc(j.stopped) : ""}</p>
+      ${found ? `<p class="muted">Use the <strong>Write email</strong> buttons, or say <strong>email 1</strong>.</p>` : ""}`);
+  }, 1500);
+}
+
+/* ---------------- email writer ---------------- */
+async function openMail(run, pid) {
+  let cfg = { smtp: false, daily_limit: 20, sent_today: 0, mock: false, from: "" };
+  try { cfg = await (await fetch("/api/mail-config")).json(); } catch (e) {}
+  const r = run.result.results.find(x => x.place_id === pid) || {}, c = run.contacts[pid] || {};
+  const verdict = c.email_verdict || "unknown", verified = verdict === "valid";
+  const ov = document.createElement("div"); ov.className = "overlay";
+  ov.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <h2 id="dlgTitle">Email to ${esc(c.contact_name || "this contact")}</h2>
+    <label>To <input type="text" value="${esc(c.contact_email)}" readonly></label>
+    <label>Subject <input type="text" id="dSub" value="Writing your draft..."></label>
+    <label>Message <textarea id="dBody">Writing your draft...</textarea></label>
+    ${verified ? "" : `<label class="check"><input type="checkbox" id="dAllow"><span>This address is ${verdict === "risky" ? "risky (the company accepts all addresses)" : "not verified"}, so it may not reach a real inbox. Send anyway.</span></label>`}
+    <p class="note">${cfg.mock ? "Sample mode: nothing will actually be sent." : cfg.smtp ? `Sends from ${esc(cfg.from)}. ${cfg.sent_today} of ${cfg.daily_limit} sent today.` : cfg.method === "gmail" ? `This opens Gmail with the draft filled in. Check it there and press Send. ${cfg.sent_today} of ${cfg.daily_limit} today.` : "No mail account is set up, so this opens in your mail app and you press Send there."}</p>
+    <p class="msgline" id="dMsg" role="status"></p>
+    <div class="row"><button class="ghost" id="dCancel">Cancel</button><button class="send" id="dSend">${cfg.smtp || cfg.mock ? "Send email" : cfg.method === "gmail" ? "Open in Gmail" : "Open in mail app"}</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => { ov.remove(); document.removeEventListener("keydown", onKey); input.focus(); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  ov.addEventListener("click", e => { if (e.target === ov) close(); });
+  ov.querySelector("#dCancel").onclick = close;
+  const send = ov.querySelector("#dSend"), allow = ov.querySelector("#dAllow"), msg = ov.querySelector("#dMsg");
+  const sync = () => { send.disabled = !!allow && !allow.checked; }; if (allow) allow.onchange = sync; sync();
+  try {
+    const d = await (await fetch("/api/draft", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: run.search.mode, lead: r, contact: c }) })).json();
+    ov.querySelector("#dSub").value = d.subject; ov.querySelector("#dBody").value = d.body;
+  } catch (e) { msg.className = "msgline err"; msg.textContent = "Could not write a draft."; }
+  ov.querySelector("#dSub").focus();
+  send.onclick = async () => {
+    const tab = (!cfg.smtp && !cfg.mock && cfg.method === "gmail") ? window.open("about:blank", "_blank") : null; // gmail-tab
+    send.disabled = true; msg.className = "msgline"; msg.textContent = "Sending...";
+    let res;
+    try {
+      res = await (await fetch("/api/send", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: c.contact_email, subject: ov.querySelector("#dSub").value, body: ov.querySelector("#dBody").value,
+          verdict, company: r.name || "", allow_unverified: !!(allow && allow.checked) }) })).json();
+    } catch (e) { res = { ok: false, message: "Cannot reach the app." }; }
+    if (!res.ok) { if (tab) tab.close(); msg.className = "msgline err"; msg.textContent = res.message; send.disabled = false; return; }
+    if (res.mailto) window.location.href = res.mailto;
+    if (res.url) { if (tab) { tab.opener = null; tab.location.href = res.url; } else window.open(res.url, "_blank", "noopener"); }
+    c.sent = res.status === "sent" ? `Emailed on ${new Date().toLocaleDateString()}` : res.status === "sample" ? "Sample send (nothing sent)" : res.status === "opened in gmail" ? `Opened in Gmail on ${new Date().toLocaleDateString()}` : `Opened in mail app on ${new Date().toLocaleDateString()}`;
+    run.contacts[pid] = c; renderLeads(run);
+    msg.className = "msgline ok"; msg.textContent = res.message;
+    botMsg(`<p>${esc(res.message)} (${esc(r.name)})</p>`);
+    setTimeout(close, 1000);
+  };
+}
+
+/* ---------------- export ---------------- */
+function rowsOf(run) {
+  return run.result.results.map((r, i) => { const c = run.contacts[r.place_id] || {}; return {
+    rank: i + 1, name: r.name, score: r.score, tier: r.tier || "", hook: r.hook || "", pilot_use_case: r.use_case || "",
+    address: r.address, phone: r.phone || "", website: r.website || "", maps_url: r.maps_url || "",
+    latitude: r.latitude, longitude: r.longitude, source: r.source || "", reasoning: r.reasoning || "",
+    contact_name: c.contact_name || "", contact_title: c.contact_title || "", contact_email: c.contact_email || "",
+    email_verdict: c.email_verdict || "", contact_linkedin: c.contact_linkedin || "", email_sent: c.sent || "" }; });
+}
+function downloadCsv(run) {
+  const rows = rowsOf(run); if (!rows.length) return;
+  const cols = Object.keys(rows[0]), q = v => `"${String(v).replace(/"/g, '""')}"`;
+  const csv = "\ufeff" + [cols.join(","), ...rows.map(r => cols.map(k => q(r[k])).join(","))].join("\r\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = `promptiq-${run.search.mode}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+async function copyJson(run) {
+  const text = JSON.stringify(rowsOf(run), null, 2);
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
+}
+
+/* ---------------- setup check ---------------- */
+async function checkSetup() {
+  const b = botMsg(`<p class="muted">Checking your setup...</p>`);
+  try {
+    const r = await (await fetch("/api/check")).json();
+    b.innerHTML = `<p><strong>Setup check</strong></p>` + r.checks.map(c =>
+      `<p><span class="badge" style="background:${c.ok ? "#1e7b4f" : "#b23a3a"}">${c.ok ? "Working" : "Needs a fix"}</span> <strong>${esc(c.name)}</strong><br><span class="muted">${linkify(c.detail)}</span></p>`).join("");
+  } catch (e) { b.innerHTML = `<div class="notice err">Cannot reach the app. Is python3 app.py running?</div>`; }
+}
+
+welcome();
+input.focus();
+</script>
+</body>
+</html>

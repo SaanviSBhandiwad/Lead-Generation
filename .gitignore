@@ -1,0 +1,44 @@
+# Secrets and environment configuration
+.env
+.env.*
+!.env.example
+*credentials*
+*secret*
+token.json
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Backups
+*.bak
+*.save
+*.old
+
+# Logs
+logs/
+*.log
+
+# Generated data and results
+output.json
+output.txt
+result.json
+investor_research.json
+investor_scores.json
+qualified_investors.json
+qualify_investors.json
+lead_qualification_results.json
+evaluation_results.json
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Frontend backups
+templates/*.bak
+static/*.bak
